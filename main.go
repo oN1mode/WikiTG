@@ -97,27 +97,36 @@ func main() {
 					log.Printf("Error Insert user to main: %s", err)
 				}
 			}
-
-			//Устанавливаем язык для поиска в Википедии
-			language := os.Getenv("LANGUAGE")
-
-			//Создаем url для поиска
-			url, _ := urlEncoded(update.Message.Text)
-
-			request := "https://" + language + ".wikipedia.org/w/api.php?action=opensearch&search=" + url + "&limit=3&origin=*&format=json"
-
-			//Присваем данные среза с ответом в переменную message
-			message := wikipediaAPI(request)
-
-			for _, val := range message {
-
-				//Отправлем сообщение
+			switch update.Message.Text {
+			case "/start":
 				bot.SendMessage(
 					tu.Message(
 						tu.ID(chatID),
-						val,
+						"Привет! Этот телеграм бот поможет отыскать интересующие статьи в Wikipedia. Для получения статей, напиши интересующую тему.",
 					),
 				)
+			default:
+				//Устанавливаем язык для поиска в Википедии
+				language := os.Getenv("LANGUAGE")
+
+				//Создаем url для поиска
+				url, _ := urlEncoded(update.Message.Text)
+
+				request := "https://" + language + ".wikipedia.org/w/api.php?action=opensearch&search=" + url + "&limit=3&origin=*&format=json"
+
+				//Присваем данные среза с ответом в переменную message
+				message := wikipediaAPI(request)
+
+				for _, val := range message {
+
+					//Отправлем сообщение
+					bot.SendMessage(
+						tu.Message(
+							tu.ID(chatID),
+							val,
+						),
+					)
+				}
 			}
 		}
 	}
