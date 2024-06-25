@@ -18,7 +18,7 @@ Wiki Telegram bot - это телеграм-бот для поиска инфо�
 Выполните в консоли
 
 ```Console
-    git clone https://github.com/oN1mode/WikiTG.git
+git clone https://github.com/oN1mode/WikiTG.git
 ```
 
 Затем перейти в корневую папку проекта
@@ -47,5 +47,5 @@ cd WikiTG
 Чтобы запустить бота, выполните в консоли команду:
 
 ```Console
-    go run cmd/app/main.go
+go run cmd/app/main.go
 ```
