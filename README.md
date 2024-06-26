@@ -40,6 +40,8 @@ cd WikiTG
     PASSWORD="database password"
     DBNAME="database name"
     SSLMODE="database ssl mode"
+
+    LANGUAGE = "ru"
 ```
 
 ### Запуск
