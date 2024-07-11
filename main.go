@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
@@ -97,6 +98,7 @@ func main() {
 					log.Printf("Error Insert user to main: %s", err)
 				}
 			}
+
 			switch update.Message.Text {
 			case "/start":
 				bot.SendMessage(
@@ -105,6 +107,7 @@ func main() {
 						"Привет! Этот телеграм бот поможет отыскать интересующие статьи в Wikipedia. Для получения статей, напиши интересующую тему.",
 					),
 				)
+
 			case "/info":
 				bot.SendMessage(
 					tu.Message(
@@ -113,8 +116,33 @@ func main() {
 						Так же имеются комманды /request-history и /response-history.
 						Команда /request-history вернет информацию о последних трех запросах.
 						Команда /response-history вернёт информацию о последних трех полученных ответов`,
-					),		
+					),
 				)
+
+			case "/request-history":
+				reqHis, err := RequestHistory(dbpool, context.Background(), user.userID)
+				if err != nil {
+					log.Printf("Error to select request history: %s", err)
+				}
+
+				bot.SendMessage(
+					tu.Message(
+						tu.ID(chatID),
+						"Последние три запроса:",
+					),
+				)
+
+				count := 1
+				for _, val := range reqHis {
+					bot.SendMessage(
+						tu.Message(
+							tu.ID(chatID),
+							fmt.Sprintf("Запрос № %v -> %s", count, val),
+						),
+					)
+					count++
+				}
+
 			default:
 				//Устанавливаем язык для поиска в Википедии
 				language := os.Getenv("LANGUAGE")
@@ -127,8 +155,11 @@ func main() {
 				//Присваем данные среза с ответом в переменную message
 				message := wikipediaAPI(request)
 
-				for _, val := range message {
+				if message[0] != "Что-то пошло не так, попробуйте изменить вопрос." {
+					InsertRequestUser(dbpool, context.Background(), update.Message.Text, user.userID)
+				}
 
+				for _, val := range message {
 					//Отправлем сообщение
 					bot.SendMessage(
 						tu.Message(
@@ -154,6 +185,52 @@ func ConfigConnStr() string {
 	return connStr
 }
 
+func RequestHistory(dbpool *pgxpool.Pool, ctx context.Context, userID int64) ([]string, error) {
+	reqHis := make([]string, 0, 3)
+
+	rows, err := dbpool.Query(ctx, "SELECT text_request FROM user_request WHERE tg_id_usr = $1 ORDER BY created_at DESC LIMIT 3", userID)
+	if err != nil {
+		return nil, err
+	}
+
+	for rows.Next() {
+		var text string
+		err := rows.Scan(&text)
+		if err != nil {
+			return nil, err
+		}
+
+		reqHis = append(reqHis, text)
+	}
+
+	return reqHis, nil
+}
+
+func InsertRequestUser(dbpool *pgxpool.Pool, ctx context.Context, request string, userID int64) error {
+	tx, err := dbpool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, "INSERT INTO user_request (text_request, created_at, tg_id_usr) VALUES ($1, $2, $3)",
+		request,
+		time.Now(),
+		userID,
+	)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func InsertUser(dbpool *pgxpool.Pool, ctx context.Context, user UserInfo) error {
 	tx, err := dbpool.Begin(ctx)
 	if err != nil {
@@ -163,12 +240,13 @@ func InsertUser(dbpool *pgxpool.Pool, ctx context.Context, user UserInfo) error 
 
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, "INSERT INTO users (tg_name, tg_id, is_bot, first_name, last_name) VALUES ($1, $2, $3, $4, $5)",
+	_, err = tx.Exec(ctx, "INSERT INTO users (tg_name, tg_id, is_bot, first_name, last_name, created_at) VALUES ($1, $2, $3, $4, $5, $6)",
 		user.userName,
 		user.userID,
 		user.isBot,
 		user.userFirstName,
 		user.userLastName,
+		time.Now(),
 	)
 	if err != nil {
 		log.Printf("Error insert to users: %s\n", err)
@@ -187,7 +265,7 @@ func InsertUser(dbpool *pgxpool.Pool, ctx context.Context, user UserInfo) error 
 func CheckUserInDB(dbpool *pgxpool.Pool, ctx context.Context, user UserInfo) (bool, error) {
 	checkUser := UserInfo{}
 
-	err := dbpool.QueryRow(ctx, "select tg_id from users where tg_id = $1", user.userID).Scan(&checkUser.userID)
+	err := dbpool.QueryRow(ctx, "SELECT tg_id FROM users WHERE tg_id = $1", user.userID).Scan(&checkUser.userID)
 	if err != nil {
 		log.Printf("Error to select users in CheckUserInDB: %s\n", err)
 		return false, err
