@@ -277,6 +277,8 @@ func GetRequestHistory(dbpool *pgxpool.Pool, ctx context.Context, userID int64) 
 		return nil, err
 	}
 
+	defer rows.Close()
+
 	for rows.Next() {
 		var text string
 		err := rows.Scan(&text)
