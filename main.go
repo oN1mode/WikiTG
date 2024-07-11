@@ -192,7 +192,10 @@ func main() {
 							val,
 						),
 					)
-					InsertResponseHistory(dbpool, context.Background(), val, user.userID)
+					err = InsertResponseHistory(dbpool, context.Background(), val, user.userID)
+					if err != nil {
+						log.Printf("Error to insert resposne history: %s\n", err)
+					}
 				}
 			}
 		}
@@ -252,7 +255,9 @@ func InsertResponseHistory(dbpool *pgxpool.Pool, ctx context.Context, response s
 
 	defer tx.Rollback(ctx)
 
-	_, err = tx.Exec(ctx, "INSERT INTO resposne_api_history (url_response, created_at, tg_id_usr) VALUES ($1, $2, $3)",
+	log.Printf("String Trim: %s\n", TrimString(response))
+
+	_, err = tx.Exec(ctx, "INSERT INTO response_api_history (url_response, created_at, tg_id_usr) VALUES ($1, $2, $3)",
 		TrimString(response),
 		time.Now(),
 		userID,
