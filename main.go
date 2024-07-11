@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -120,7 +121,7 @@ func main() {
 				)
 
 			case "/request-history":
-				reqHis, err := RequestHistory(dbpool, context.Background(), user.userID)
+				reqHis, err := GetRequestHistory(dbpool, context.Background(), user.userID)
 				if err != nil {
 					log.Printf("Error to select request history: %s", err)
 				}
@@ -138,6 +139,30 @@ func main() {
 						tu.Message(
 							tu.ID(chatID),
 							fmt.Sprintf("Запрос № %v -> %s", count, val),
+						),
+					)
+					count++
+				}
+
+			case "/response-history":
+				resHis, err := GetResponseHistory(dbpool, context.Background(), user.userID)
+				if err != nil {
+					log.Printf("Error to select response history: %s", err)
+				}
+
+				bot.SendMessage(
+					tu.Message(
+						tu.ID(chatID),
+						"Последние три полученных ответа:",
+					),
+				)
+
+				count := 1
+				for _, val := range resHis {
+					bot.SendMessage(
+						tu.Message(
+							tu.ID(chatID),
+							fmt.Sprintf("Ответ № %v -> %s", count, val),
 						),
 					)
 					count++
@@ -167,6 +192,7 @@ func main() {
 							val,
 						),
 					)
+					InsertResponseHistory(dbpool, context.Background(), val, user.userID)
 				}
 			}
 		}
@@ -185,7 +211,65 @@ func ConfigConnStr() string {
 	return connStr
 }
 
-func RequestHistory(dbpool *pgxpool.Pool, ctx context.Context, userID int64) ([]string, error) {
+func TrimString(str string) string {
+	return strings.Trim(str, "https://ru.wikipedia.org/wiki/")
+}
+
+func RecoveryString(str string) string {
+	return ("https://ru.wikipedia.org/wiki/" + str)
+}
+
+func GetResponseHistory(dbpool *pgxpool.Pool, ctx context.Context, userID int64) ([]string, error) {
+	resHis := make([]string, 0, 3)
+
+	rows, err := dbpool.Query(ctx, "SELECT url_response FROM response_api_history WHERE tg_id_usr = $1 ORDER BY created_at DESC LIMIT 3", userID)
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var url string
+		err := rows.Scan(&url)
+		if err != nil {
+			return nil, err
+		}
+
+		url = RecoveryString(url)
+
+		resHis = append(resHis, url)
+	}
+
+	return resHis, nil
+}
+
+func InsertResponseHistory(dbpool *pgxpool.Pool, ctx context.Context, response string, userID int64) error {
+	tx, err := dbpool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, "INSERT INTO resposne_api_history (url_response, created_at, tg_id_usr) VALUES ($1, $2, $3)",
+		TrimString(response),
+		time.Now(),
+		userID,
+	)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func GetRequestHistory(dbpool *pgxpool.Pool, ctx context.Context, userID int64) ([]string, error) {
 	reqHis := make([]string, 0, 3)
 
 	rows, err := dbpool.Query(ctx, "SELECT text_request FROM user_request WHERE tg_id_usr = $1 ORDER BY created_at DESC LIMIT 3", userID)
